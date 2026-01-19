@@ -17,14 +17,15 @@ import fcntl
 import gi
 import json
 import logging
-import os
 import sys
+from pathlib import Path
+from typing import Optional, Dict, Any, Tuple
 
 # Tenta importar a biblioteca de notificações. Se não tiver, segue sem ela.
 notifications_enabled = False
 try:
     gi.require_version("Notify", "0.7")
-    from  gi.repository import Notify
+    from gi.repository import Notify
     notifications_enabled = True
 except ValueError:
     logging.warning("Biblioteca de notificações não encontrada. Iniciando sem ela.")
@@ -34,26 +35,55 @@ gi.require_version("Gtk", "3.0")
 gi.require_version("WebKit2", "4.1")
 from gi.repository import Gtk, Gdk, WebKit2, GLib
 
-def get_app_data_path():
-    # Retorna o diretório padrão do usuário (XDG Standard)
-    path = os.path.join(GLib.get_user_data_dir(), "python-whatsapp-gtk")
+# --- Configuration & Constants ---
+APP_NAME = "python-whatsapp-gtk"
+WINDOW_TITLE = "WhatsApp"
+DEFAULT_WIDTH = 1000
+DEFAULT_HEIGHT = 700
+WHATSAPP_URL = "https://web.whatsapp.com/"
+USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
+# CSS para ocultar banners e limpar a interface
+INJECTED_STYLES = """
+    svg[viewBox="0 0 228 152"] { display: none !important; }
+
+    h1.html-h1 { display: none !important; }
+    h1.html-h1 ~ div button { display: none !important; }
+    
+    div:has(> h1.html-h1) { display: none !important; }
+
+    span[data-icon="wa-square-icon"] { display: none !important; }
+
+    div[role="button"]:has(span[data-icon="wa-square-icon"]) { display: none !important; }
+    
+    div[role="button"]:has(> div > span[data-icon="wa-square-icon"]) { display: none !important; }
+
+    div:has(> div > span[data-icon="web-login-desktop-upsell-illustration"]) { display: none !important; }          
+
+    div:has(> div > div > span[data-icon="web-login-desktop-upsell-illustration"]) { display: none !important; height: 0 !important; margin: 0 !important; padding: 0 !important; }
+
+    div:has(> div > div > div > span[data-icon="web-login-desktop-upsell-illustration"]) { display: none !important; height: 0 !important; margin: 0 !important; padding: 0 !important; }
+"""
+
+def get_app_data_path() -> Path:
+    """Retorna o diretório padrão do usuário (XDG Standard) para dados da aplicação."""
+    path = Path(GLib.get_user_data_dir()) / APP_NAME
     try:
-        os.makedirs(path, exist_ok=True)
+        path.mkdir(parents=True, exist_ok=True)
         return path
     except OSError as error:
         sys.stderr.write(f"CRITICAL: Falha ao criar repositório de dados: {error}\n")
         sys.exit(1)
 
 class ClientWindow(Gtk.Window):
-    def __init__(self):
-        super().__init__(title="WhatsApp")
+    def __init__(self) -> None:
+        super().__init__(title=WINDOW_TITLE)
         
-        self.base_path = get_app_data_path()
-        self.state_file = os.path.join(self.base_path, "window_state.json")
-
+        self.base_path: Path = get_app_data_path()
+        self.state_file: Path = self.base_path / "window_state.json"
+        self.lock_file_path: Path = self.base_path / "app.lock"
+        
         # Cria um arquivo de trava. Se já estiver trancado por outro, fecha este.
-        self.lock_file_path = os.path.join(self.base_path, "app.lock")
-        
         try:
             self.lock_fp = open(self.lock_file_path, 'w')
             # Tenta adquirir bloqueio exclusivo (LOCK_EX) e sem esperar (LOCK_NB).
@@ -63,13 +93,13 @@ class ClientWindow(Gtk.Window):
             sys.exit(0)
 
         if not self.load_window_state():
-            self.set_default_size(1000, 700)
+            self.set_default_size(DEFAULT_WIDTH, DEFAULT_HEIGHT)
 
-        log_file = os.path.join(self.base_path, "application.log")
+        log_file: Path = self.base_path / "application.log"
 
         # Salva logs em arquivos para auditoria.
         logging.basicConfig(
-            filename=log_file,
+            filename=str(log_file),
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S'
@@ -77,8 +107,8 @@ class ClientWindow(Gtk.Window):
         try:
             # isola cookies e cache na pasta designada, sem misturar com o navegador do sistema operacional.
             data_manager = WebKit2.WebsiteDataManager(
-                base_data_directory = self.base_path,
-                base_cache_directory = self.base_path
+                base_data_directory=str(self.base_path),
+                base_cache_directory=str(self.base_path)
             )
 
             context = WebKit2.WebContext.new_with_website_data_manager(data_manager)
@@ -90,7 +120,7 @@ class ClientWindow(Gtk.Window):
 
             if notifications_enabled:
                 try:
-                    Notify.init("WhatsApp")
+                    Notify.init(WINDOW_TITLE)
                     context.connect("show-notification", self._on_show_notification)
                 except Exception as error:
                     logging.warning(f"Erro ao inicializar notificações: {error}")
@@ -98,30 +128,9 @@ class ClientWindow(Gtk.Window):
             self.webview = WebKit2.WebView.new_with_context(context)
             content_manager = self.webview.get_user_content_manager()
 
-            # Injeta CSS para ocultar banners de propaganda (Mac/Windows) e limpar a interface.
-            css_style = """
-                svg[viewBox="0 0 228 152"] { display: none !important; }
-
-                h1.html-h1 { display: none !important; }
-                h1.html-h1 ~ div button { display: none !important; }
-                
-                div:has(> h1.html-h1) { display: none !important; }
-
-                span[data-icon="wa-square-icon"] { display: none !important; }
-
-                div[role="button"]:has(span[data-icon="wa-square-icon"]) { display: none !important; }
-                
-                div[role="button"]:has(> div > span[data-icon="wa-square-icon"]) { display: none !important; }
-
-                div:has(> div > span[data-icon="web-login-desktop-upsell-illustration"]) { display: none !important; }          
-
-                div:has(> div > div > span[data-icon="web-login-desktop-upsell-illustration"]) { display: none !important; height: 0 !important; margin: 0 !important; padding: 0 !important; }
-
-                div:has(> div > div > div > span[data-icon="web-login-desktop-upsell-illustration"]) { display: none !important; height: 0 !important; margin: 0 !important; padding: 0 !important; }
-            """
-
+            # Injeta CSS para limpar a interface
             style = WebKit2.UserStyleSheet.new(
-                css_style,
+                INJECTED_STYLES,
                 WebKit2.UserContentInjectedFrames.TOP_FRAME,
                 WebKit2.UserStyleLevel.USER,
                 None,
@@ -135,7 +144,7 @@ class ClientWindow(Gtk.Window):
             self.connect("key-press-event", self._on_key_press)
             self.webview.connect("load-failed", self._on_load_failed)
             self.webview.connect("decide-policy", self._on_decide_policy) # Evita que links externos sejam abertos no wrapper.
-            self.webview.connect("create", self._on_create_web_view) # Captura tentativas de abrir novas janelas por JavaScript e redireciona para o navegador padrão.
+            self.webview.connect("create", self._on_create_web_view) # Captura tentativas de abrir novas janelas por JavaScript.
             self.webview.connect("permission-request", self._on_permission_request) # Gerencia as permissões de microfone e câmera.
 
             settings = self.webview.get_settings()
@@ -144,23 +153,20 @@ class ClientWindow(Gtk.Window):
             settings.set_hardware_acceleration_policy(WebKit2.HardwareAccelerationPolicy.ALWAYS)
 
             settings.set_enable_write_console_messages_to_stdout(False) # Limpa o terminal,
-            settings.set_enable_developer_extras(False) # Desativa funções de desenvolvedor, economizando memória.
+            settings.set_enable_developer_extras(False) # Desativa funções de desenvolvedor.
             
-            # Define o navegador como Chrome no Linux.
-            # Isso evita que o WhatsApp peça atualização e garante compatibilidade.
-            user_agent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-            settings.set_user_agent(user_agent)
+            # Define o User-Agent
+            settings.set_user_agent(USER_AGENT)
 
             # Carrega a aplicação
-            url = "https://web.whatsapp.com/"
-            self.webview.load_uri(url)
+            self.webview.load_uri(WHATSAPP_URL)
             self.add(self.webview)
         except Exception as error:
             # Captura falhas na engine do navegador.
             logging.critical(f"Erro fatal ao iniciar WebKit: {error}", exc_info=True)
             raise error
 
-    def save_window_state(self, widget, event):
+    def save_window_state(self, widget: Gtk.Widget, event: Any) -> bool:
         try:
             size = self.get_size()
             position = self.get_position()
@@ -184,13 +190,13 @@ class ClientWindow(Gtk.Window):
 
         return False
 
-    def load_window_state(self):
+    def load_window_state(self) -> bool:
         try:
-            if os.path.exists(self.state_file):
+            if self.state_file.exists():
                 with open(self.state_file, 'r') as f:
                     state = json.load(f)
 
-                self.resize(state.get("width", 1000), state.get("height", 700))
+                self.resize(state.get("width", DEFAULT_WIDTH), state.get("height", DEFAULT_HEIGHT))
 
                 if state.get("is_maximized", False):
                     self.maximize()
@@ -203,7 +209,7 @@ class ClientWindow(Gtk.Window):
             logging.warning(f"Não foi possível restaurar o estado da janela: {error}")
         return False
 
-    def _on_key_press(self, widget, event):
+    def _on_key_press(self, widget: Gtk.Widget, event: Gdk.EventKey) -> bool:
         # Permite recarregar a página pressionando F5
         if event.keyval == Gdk.KEY_F5:
             logging.info("Tecla F5 pressionada. Recarregando página...")
@@ -211,7 +217,7 @@ class ClientWindow(Gtk.Window):
             return True
         return False
 
-    def _on_load_failed(self, webview, load_event, failing_uri, error):
+    def _on_load_failed(self, webview: WebKit2.WebView, load_event: WebKit2.LoadEvent, failing_uri: str, error: GLib.Error) -> bool:
         # Tenta reconexão caso a internet fique fora do ar.
         logging.error(f"Falha ao carregar {failing_uri}: {error.message}")
         
@@ -234,7 +240,7 @@ class ClientWindow(Gtk.Window):
         
         return True
 
-    def _on_show_notification(self, webview, notification):
+    def _on_show_notification(self, webview: WebKit2.WebView, notification: WebKit2.Notification) -> bool:
         # Exibe notificações nativas.
         try:
             n = Notify.Notification.new(
@@ -249,13 +255,13 @@ class ClientWindow(Gtk.Window):
             logging.warning(f"Erro ao exibir notificação; {error}")
             return False
 
-    def _on_permission_request(self, webview, request):
+    def _on_permission_request(self, webview: WebKit2.WebView, request: WebKit2.PermissionRequest) -> bool:
         # Aceita automaticamente solicitações de microfone e câmera.
         logging.info("Permissão de dispositivo solicitada. Acesso concedido.")
         request.allow()
         return True
 
-    def _on_decide_policy(self, webview, decision, decision_type):
+    def _on_decide_policy(self, webview: WebKit2.WebView, decision: WebKit2.PolicyDecision, decision_type: WebKit2.PolicyDecisionType) -> bool:
         if decision_type == WebKit2.PolicyDecisionType.NAVIGATION_ACTION:
             navigation_action = decision.get_navigation_action()
             request = navigation_action.get_request()
@@ -272,7 +278,7 @@ class ClientWindow(Gtk.Window):
         
         return False
 
-    def _on_create_web_view(self, webview, navigation_action):
+    def _on_create_web_view(self, webview: WebKit2.WebView, navigation_action: WebKit2.NavigationAction) -> Optional[WebKit2.WebView]:
         request = navigation_action.get_request()
         uri = request.get_uri()
         
@@ -287,7 +293,7 @@ class ClientWindow(Gtk.Window):
 
 if __name__ == "__main__":
     
-    GLib.set_prgname("whatsapp")
+    GLib.set_prgname(APP_NAME)
     
     try:
         app = ClientWindow()
