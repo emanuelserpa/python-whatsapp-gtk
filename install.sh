@@ -7,7 +7,6 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-SOURCE_FILE="python-whatsapp-gtk.py"
 APP_NAME="python-whatsapp-gtk"
 ICON_SOURCE="assets/icon.png"
 
