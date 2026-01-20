@@ -30,6 +30,16 @@ try:
 except ValueError:
     logging.warning("Biblioteca de notificações não encontrada. Iniciando sem ela.")
 
+# Tenta importar AppIndicator3 para o ícone da bandeja
+app_indicator_enabled = False
+try:
+    gi.require_version('AppIndicator3', '0.1')
+    from gi.repository import AppIndicator3
+    app_indicator_enabled = True
+except (ValueError, ImportError):
+    logging.warning("AppIndicator3 não encontrado. O ícone na bandeja será desativado.")
+
+
 # Garante que as versões corretas das bibliotecas do sistema operacional sejam carregadas.
 gi.require_version("Gtk", "3.0")
 gi.require_version("WebKit2", "4.1")
@@ -139,8 +149,21 @@ class ClientWindow(Gtk.Window):
 
             content_manager.add_style_sheet(style)
 
+            # ----- Initialize Tray Icon -----
+            self.indicator = None
+            if app_indicator_enabled:
+                self._init_tray_icon()
+
+            # ----- Check Dark Mode -----
+            self._apply_dark_mode_if_needed(content_manager)
+
             # ----- WebView Connect -----
-            self.connect("delete-event", self.save_window_state)
+            # Se a bandeja estiver ativa, "delete-event" esconde a janela ao invés de fechar
+            if app_indicator_enabled:
+                self.connect("delete-event", self._on_window_delete_event)
+            else:
+                self.connect("delete-event", self.save_window_state)
+
             self.connect("key-press-event", self._on_key_press)
             self.webview.connect("load-failed", self._on_load_failed)
             self.webview.connect("decide-policy", self._on_decide_policy) # Evita que links externos sejam abertos no wrapper.
@@ -166,6 +189,94 @@ class ClientWindow(Gtk.Window):
             logging.critical(f"Erro fatal ao iniciar WebKit: {error}", exc_info=True)
             raise error
 
+    def _init_tray_icon(self):
+        try:
+            icon_path = "" # Pode-se definir um caminho para um ícone customizado aqui se houver
+            # Usa 'whatsapp' ou 'dialog-information' como fallback se não tiver ícone específico
+            self.indicator = AppIndicator3.Indicator.new(
+                APP_NAME,
+                "whatsapp",
+                AppIndicator3.IndicatorCategory.APPLICATION_STATUS
+            )
+            self.indicator.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
+            
+            menu = Gtk.Menu()
+            
+            item_show = Gtk.MenuItem(label="Abrir WhatsApp")
+            item_show.connect("activate", self._show_window)
+            menu.append(item_show)
+            
+            menu.append(Gtk.SeparatorMenuItem())
+            
+            item_quit = Gtk.MenuItem(label="Sair")
+            item_quit.connect("activate", self._quit_application)
+            menu.append(item_quit)
+            
+            menu.show_all()
+            self.indicator.set_menu(menu)
+            
+            logging.info("Ícone na bandeja inicializado.")
+        except Exception as e:
+            logging.warning(f"Erro ao criar ícone na bandeja: {e}")
+            self.indicator = None
+
+    def _apply_dark_mode_if_needed(self, content_manager: WebKit2.UserContentManager):
+        try:
+            settings = Gtk.Settings.get_default()
+            theme_name = settings.get_property("gtk-theme-name")
+            prefer_dark = settings.get_property("gtk-application-prefer-dark-theme")
+            
+            is_dark = "dark" in theme_name.lower() or prefer_dark
+
+            if is_dark:
+                logging.info(f"Modo escuro detectado (Tema: {theme_name}). Aplicando...")
+                
+                # Script para adicionar a classe 'dark' ao body quando o documento carregar
+                js_dark_mode = """
+                    window.addEventListener('load', function() {
+                        document.body.classList.add('dark');
+                    });
+                    // Caso o carregamento já tenha ocorrido ou seja dinâmico:
+                    if (document.body) {
+                        document.body.classList.add('dark');
+                    }
+                    // Observador para garantir que a classe persista
+                    const observer = new MutationObserver(function(mutations) {
+                        if (!document.body.classList.contains('dark')) {
+                            document.body.classList.add('dark');
+                        }
+                    });
+                    if (document.body) {
+                        observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+                    }
+                """
+                
+                script = WebKit2.UserScript.new(
+                    js_dark_mode,
+                    WebKit2.UserContentInjectedFrames.TOP_FRAME,
+                    WebKit2.UserScriptInjectionTime.END,
+                    None,
+                    None
+                )
+                content_manager.add_script(script)
+        except Exception as e:
+            logging.warning(f"Erro ao tentar aplicar modo escuro: {e}")
+
+    def _show_window(self, widget: Any):
+        self.show()
+        self.present()
+
+    def _quit_application(self, widget: Any):
+        self.save_window_state(self, None)
+        Gtk.main_quit()
+
+    def _on_window_delete_event(self, widget: Gtk.Widget, event: Any) -> bool:
+        # Salva o estado antes de esconder
+        self.save_window_state(widget, event)
+        # Esconde a janela mas mantém o app rodando
+        self.hide()
+        return True
+
     def save_window_state(self, widget: Gtk.Widget, event: Any) -> bool:
         try:
             size = self.get_size()
@@ -188,6 +299,8 @@ class ClientWindow(Gtk.Window):
         except Exception as error:
             logging.warning(f"Erro ao salvar estado: {error}")
 
+        # Se não tiver indicador, retorna False para propagar o evento destroy (fechar app)
+        # Se tiver indicador, o método _on_window_delete_event já retornou True para impedir o fechamento
         return False
 
     def load_window_state(self) -> bool:

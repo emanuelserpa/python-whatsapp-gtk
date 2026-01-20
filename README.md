@@ -18,45 +18,40 @@ Fiz um **wrapper** em **Python** — linguagem com a qual tenho familiaridade �
 - **Eficiência Máxima:** Motor WebKit2 otimizado para baixo consumo de RAM.
 - **Isolamento de Dados:** Sessão e cache isolados (padrão XDG).
 - **Notificações:** Suporte completo a notificações do sistema (via libnotify).
+- **Ícone na Bandeja:** Continua rodando em segundo plano (minimiza para o System Tray).
+- **Modo Escuro Automático:** Detecta o tema do seu desktop Linux e ajusta o WhatsApp.
 - **Aceleração de Hardware:** Renderização via GPU para maior fluidez.
 - **Robustez:** Tratamento de erros de conexão com tentativa automática de reconexão.
 - Instalação integrada ao menu do sistema.
 - Suporte a gestos (padrão WebKit).
 
 ## Pré-requisitos
-Para instalar o wrapper, você precisa do Git, Python 3 e das bibliotecas do sistema do GTK, WebKit e notificações. Escolha o comando de acordo com sua distribuição:
+Para instalar o wrapper, você precisa do Git, Python 3 e das bibliotecas do sistema do GTK, WebKit e notificações.
+Para a funcionalidade de ícone na bandeja, recomenda-se instalar `libappindicator` ou equivalente.
 
 ### Debian / Ubuntu / Pop!_OS
 ```bash
 sudo apt update
-sudo apt install -y git python3 python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1 gir1.2-notify-0.7 libnotify-bin
+sudo apt install -y git python3 python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1 gir1.2-notify-0.7 libnotify-bin gir1.2-appindicator3-0.1
 ```
 
 ### Fedora / Red Hat / CentOS
 ```bash
-sudo dnf install git python3 python3-gobject python3-cairo gtk3 webkit2gtk4.1 libnotify
+sudo dnf install git python3 python3-gobject python3-cairo gtk3 webkit2gtk4.1 libnotify libappindicator-gtk3
 ```
 
 ### Arch Linux / Manjaro / EndeavourOS
 ```bash
-sudo pacman -S git python python-gobject python-cairo gtk3 webkit2gtk-4.1 libnotify
+sudo pacman -S git python python-gobject python-cairo gtk3 webkit2gtk-4.1 libnotify libappindicator-gtk3
 ```
 
 ### Slackware
 ```bash
 sudo slackpkg update
 sudo slackpkg install git python3 pygobject3 pycairo gtk+3 webkit2gtk libnotify
+# Nota: AppIndicator pode requerer SBo ou pacote extra
 ```
-### Dicionário
-| **Componente** | **Debian/Ubuntu** | **Fedora** | **Arch Linux** | **Slackware** 
-| :---: | :---: | :---: | :---: | :---:
-| **GIT** | git | git | git | git
-| **Linguagem** | python3 | python3 | python | python3
-| **Bindings GObject** | python3-gi | python3-gobject | python-gobject | pygobject3
-| **Bindings Cairo** | python3-gi-cairo | python3-cairo | python-cairo | pycairo
-| **GTK 3** | gir1.2-gtk-3.0 | gtk3 | gtk3 | gtk+3
-| **WebKit 4.1** | gir1.2-webkit2-4.1 | webkit2gtk4.1 | webkit2gtk4.1 | webkit2gtk
-| **Notificações** | gir1.2-notify-0.7 libnotify-bin | libnotify | libnotify | libnotify
+
 ## Instalação e uso
 ### 1. Clone o repositório:
 ```bash
