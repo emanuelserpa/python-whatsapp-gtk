@@ -65,6 +65,23 @@ chmod +x install.sh
 ./install.sh
 ```
 
+### 3. Configuração Avançada (User Agent)
+Caso o WhatsApp web exiba avisos de "navegador não suportado", você pode alterar o **User Agent** manualmente.
+O arquivo de configuração é criado automaticamente na primeira execução em:
+`~/.local/share/python-whatsapp-gtk/config.json`
+
+Para editar:
+1. Abra o arquivo em seu editor de texto.
+2. Atualize o valor de `user_agent` para uma versão mais recente do Chrome/Linux.
+3. Reinicie o aplicativo.
+
+Exemplo de `config.json`:
+```json
+{
+    "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
+}
+```
+
 ## Desinstalação do programa
 Para remover completamente a aplicação e seus resíduos de dados:
 ```bash

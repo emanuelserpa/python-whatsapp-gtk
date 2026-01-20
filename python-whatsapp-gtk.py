@@ -51,7 +51,7 @@ WINDOW_TITLE = "WhatsApp"
 DEFAULT_WIDTH = 1000
 DEFAULT_HEIGHT = 700
 WHATSAPP_URL = "https://web.whatsapp.com/"
-USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+DEFAULT_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
 # CSS para ocultar banners e limpar a interface
 INJECTED_STYLES = """
@@ -85,6 +85,35 @@ def get_app_data_path() -> Path:
         sys.stderr.write(f"CRITICAL: Falha ao criar repositório de dados: {error}\n")
         sys.exit(1)
 
+def load_or_create_config(base_path: Path) -> Dict[str, str]:
+    """Carrega as configurações do arquivo JSON ou cria um novo com valores padrão."""
+    config_file = base_path / "config.json"
+    default_config = {
+        "user_agent": DEFAULT_USER_AGENT
+    }
+
+    if not config_file.exists():
+        try:
+            with open(config_file, 'w') as f:
+                json.dump(default_config, f, indent=4)
+            logging.info(f"Arquivo de configuração criado em: {config_file}")
+            return default_config
+        except Exception as e:
+            logging.error(f"Falha ao criar arquivo de configuração: {e}")
+            return default_config
+
+    try:
+        with open(config_file, 'r') as f:
+            config = json.load(f)
+            # Garante que chaves essenciais existam (merge com defaults)
+            for key, value in default_config.items():
+                if key not in config:
+                    config[key] = value
+            return config
+    except Exception as e:
+        logging.error(f"Falha ao ler arquivo de configuração: {e}. Usando padrões.")
+        return default_config
+
 class ClientWindow(Gtk.Window):
     def __init__(self) -> None:
         super().__init__(title=WINDOW_TITLE)
@@ -101,6 +130,9 @@ class ClientWindow(Gtk.Window):
         except IOError:
             logging.warning("Outra instância já está rodando. Encerrando")
             sys.exit(0)
+
+        # Carrega configuração (User Agent, etc)
+        self.config = load_or_create_config(self.base_path)
 
         if not self.load_window_state():
             self.set_default_size(DEFAULT_WIDTH, DEFAULT_HEIGHT)
@@ -178,9 +210,19 @@ class ClientWindow(Gtk.Window):
             settings.set_enable_write_console_messages_to_stdout(False) # Limpa o terminal,
             settings.set_enable_developer_extras(False) # Desativa funções de desenvolvedor.
             
-            # Define o User-Agent
-            settings.set_user_agent(USER_AGENT)
+            # Define o User-Agent a partir da configuração externa ou padrão
+            current_ua = self.config.get("user_agent", DEFAULT_USER_AGENT)
+            settings.set_user_agent(current_ua)
+            logging.info(f"User-Agent definido: {current_ua}")
 
+            # ----- Drag & Drop Support -----
+            # O WebKit2GTK geralmente habilita D&D do navegador por padrão.
+            # No entanto, garantimos que não estamos bloqueando nada no GTK.
+            self.drag_dest_unset() # Remove comportamentos padrão de drag-dest do GTK na janela principal para evitar conflitos
+
+            # ----- Download Manager -----
+            context.connect("download-started", self._on_download_started)
+            
             # Carrega a aplicação
             self.webview.load_uri(WHATSAPP_URL)
             self.add(self.webview)
@@ -403,6 +445,69 @@ class ClientWindow(Gtk.Window):
                 logging.warning(f"Falha ao abrir popup no navegador: {error}")
         
         return None
+
+    # --- Download Manager Handlers ---
+
+    def _on_download_started(self, context: WebKit2.WebContext, download: WebKit2.Download):
+        logging.info("Iniciando download...")
+        # Conecta aos sinais do objeto Download
+        download.connect("decide-destination", self._on_download_decide_destination)
+        download.connect("finished", self._on_download_finished)
+        download.connect("failed", self._on_download_failed)
+
+    def _on_download_decide_destination(self, download: WebKit2.Download, suggested_filename: str) -> bool:
+        logging.info(f"Solicitado destino para arquivo: {suggested_filename}")
+        
+        dialog = Gtk.FileChooserDialog(
+            title="Salvar arquivo",
+            parent=self,
+            action=Gtk.FileChooserAction.SAVE
+        )
+        dialog.add_buttons(
+            Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+            Gtk.STOCK_SAVE, Gtk.ResponseType.ACCEPT
+        )
+
+        # Define o nome sugerido
+        if suggested_filename:
+            dialog.set_current_name(suggested_filename)
+        else:
+            dialog.set_current_name("whatsapp_download")
+        
+        # Tenta definir o diretório de downloads padrão
+        downloads_dir = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DOWNLOAD)
+        if downloads_dir:
+            dialog.set_current_folder(downloads_dir)
+
+        response = dialog.run()
+        
+        if response == Gtk.ResponseType.ACCEPT:
+            uri = dialog.get_uri()
+            logging.info(f"Destino definido: {uri}")
+            download.set_destination(uri)
+            dialog.destroy()
+            return True # Retorna True para indicar que nós lidamos com a decisão
+        
+        dialog.destroy()
+        return False # Retorna False se o usuário cancelou (o download pode falhar ou ser cancelado)
+
+    def _on_download_finished(self, download: WebKit2.Download):
+        logging.info("Download concluído com sucesso.")
+        if notifications_enabled:
+            try:
+                n = Notify.Notification.new("Download Concluído", "Arquivo salvo com sucesso.", "document-save")
+                n.show()
+            except Exception:
+                pass
+
+    def _on_download_failed(self, download: WebKit2.Download, error: GLib.Error):
+        logging.warning(f"Download falhou: {error}")
+        if notifications_enabled:
+            try:
+                n = Notify.Notification.new("Falha no Download", f"Erro: {error}", "dialog-error")
+                n.show()
+            except Exception:
+                pass
 
 if __name__ == "__main__":
     
