@@ -31,36 +31,32 @@ Fiz um **wrapper** em **Python** — linguagem com a qual tenho familiaridade �
 - 🔒 **Isolamento de Dados:** Sessão e cache isolados (sem misturar com seu Chrome/Firefox).
 - 🔔 **Notificações:** Suporte completo a notificações com o sistema (libnotify).
 - 📥 **Gerenciador de Downloads:** Salve PDFs, imagens e documentos onde quiser.
-- 📂 **Drag & Drop:** Arraste arquivos do seu PC direto para a conversa.
 - 🌗 **Modo Escuro Automático:** Segue o tema do seu ambiente Linux.
-- 🔽 **System Tray:** Minimiza para a bandeja ao fechar, mantendo o app rodando.
 - ⚡ **Aceleração Hardware:** Renderização via GPU.
 
 ## Pré-requisitos
 Para instalar o wrapper, você precisa do Git, Python 3 e das bibliotecas do sistema do GTK, WebKit e notificações.
-Para a funcionalidade de ícone na bandeja, recomenda-se instalar `libappindicator` ou equivalente.
 
-### Debian / Ubuntu / Pop!_OS / Mint
+### Debian / Ubuntu
 ```bash
 sudo apt update
-sudo apt install -y git python3 python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1 gir1.2-notify-0.7 libnotify-bin gir1.2-appindicator3-0.1
+sudo apt install -y git python3 python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1 gir1.2-notify-0.7 libnotify-bin
 ```
 
 **Fedora / Red Hat**
 ```bash
-sudo dnf install git python3 python3-gobject python3-cairo gtk3 webkit2gtk4.1 libnotify libappindicator-gtk3
+sudo dnf install git python3 python3-gobject python3-cairo gtk3 webkit2gtk4.1 libnotify
 ```
 
 **Arch Linux / Manjaro**
 ```bash
-sudo pacman -S git python python-gobject python-cairo gtk3 webkit2gtk-4.1 libnotify libappindicator-gtk3
+sudo pacman -S git python python-gobject python-cairo gtk3 webkit2gtk-4.1 libnotify
 ```
 
 ### Slackware
 ```bash
 sudo slackpkg update
 sudo slackpkg install git python3 pygobject3 pycairo gtk+3 webkit2gtk libnotify
-# Nota: AppIndicator pode requerer SBo ou pacote extra
 ```
 
 ### Dicionário de Pacotes
@@ -75,7 +71,6 @@ Referência cruzada das dependências por distribuição:
 | **GTK 3** | `gir1.2-gtk-3.0` | `gtk3` | `gtk3` | `gtk+3` |
 | **WebKit 4.1** | `gir1.2-webkit2-4.1` | `webkit2gtk4.1` | `webkit2gtk-4.1` | `webkit2gtk` |
 | **Notificações** | `libnotify-bin` | `libnotify` | `libnotify` | `libnotify` |
-| **Tray Icon** | `gir1.2-appindicator3` | `libappindicator-gtk3` | `libappindicator-gtk3` | *(SBo/Extra)* |
 
 ## Instalação e uso
 ### 1. Clone o repositório:
@@ -110,10 +105,6 @@ Exemplo de `config.json`:
 ---
 
 ## Solução de Problemas (Troubleshooting)
-
-**O ícone da bandeja não aparece**
-- Certifique-se de ter instalado o pacote `libappindicator` (ver tabela "Dicionário").
-- Em alguns ambientes GNOME, pode ser necessário a extensão **"AppIndicator and KStatusNotifierItem Support"**.
 
 **Erro "ModuleNotFoundError: No module named 'gi'"**
 - Faltam os bindings do GTK para Python (`python3-gi` ou `python-gobject`).

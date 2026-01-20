@@ -1,8 +1,6 @@
 """
 Main Application Window Logic.
 """
-import os
-import signal
 import sys
 import json
 import fcntl
@@ -21,7 +19,7 @@ from ..constants import (
 )
 from ..utils import get_app_data_path, setup_logging
 from ..config import load_or_create_config
-from .tray import TrayIcon, app_indicator_enabled
+from ..config import load_or_create_config
 
 # Notification Support
 notifications_enabled = False
@@ -45,41 +43,12 @@ class ClientWindow(Gtk.Window):
         # Setup Logging
         setup_logging(self.base_path)
 
-        # Single Instance Lock & IPC
-        # Usamos 'a+' para não truncar o arquivo se outra instância abrir
-        self.lock_fp = open(self.lock_file_path, 'a+')
-        self.lock_fp.seek(0)
-        
+        # Single Instance Lock
         try:
-            # Tenta adquirir o lock
+            self.lock_fp = open(self.lock_file_path, 'w')
             fcntl.lockf(self.lock_fp, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            
-            # Sucesso: Somos a instância principal. Salva o PID.
-            self.lock_fp.seek(0)
-            self.lock_fp.truncate()
-            self.lock_fp.write(str(os.getpid()))
-            self.lock_fp.flush()
-            
-            # Registra handler para restaurar janela ao receber sinal
-            # Usamos signal.signal padrão para garantir que o Python intercepte antes do SO matar o processo
-            signal.signal(signal.SIGUSR1, self._handle_signal)
-            
         except IOError:
-            # Falha: Outra instância existe. Tenta notificar.
-            logging.warning("Outra instância já está rodando.")
-            self.lock_fp.seek(0)
-            pid_str = self.lock_fp.read().strip()
-            
-            if pid_str and pid_str.isdigit():
-                target_pid = int(pid_str)
-                logging.info(f"Enviando sinal de restauração para PID {target_pid}")
-                try:
-                    os.kill(target_pid, signal.SIGUSR1)
-                except ProcessLookupError:
-                    pass
-                except Exception as e:
-                    logging.warning(f"Erro ao enviar sinal: {e}")
-            
+            logging.warning("Outra instância já está rodando. Encerrando")
             sys.exit(0)
 
         # Load Config
@@ -100,30 +69,14 @@ class ClientWindow(Gtk.Window):
         # Initialize Components
         self._init_webview()
         
-        # Tray Icon
-        self.tray = TrayIcon(self) # Handles logic internally if enabled
-
         self._setup_signals()
 
         self.webview.load_uri(WHATSAPP_URL)
         self.add(self.webview)
 
-        # Drag & Drop fix
-        # Chamamos no final para garantir que o GTK não sobrescreva
-        self.drag_dest_unset()
-
-    def _handle_signal(self, signum, frame):
-        """Callback de baixo nível para o sinal."""
-        # Agenda a execução na thread principal do GTK
-        GLib.idle_add(self._on_app_signal)
-
     def _setup_signals(self):
         self.connect("key-press-event", self._on_key_press)
-        
-        if app_indicator_enabled:
-            self.connect("delete-event", self._on_window_delete_event)
-        else:
-            self.connect("delete-event", self.save_window_state)
+        self.connect("delete-event", self.save_window_state)
 
     def _init_webview(self):
         data_manager = WebKit2.WebsiteDataManager(
@@ -202,10 +155,6 @@ class ClientWindow(Gtk.Window):
         except Exception as e:
             logging.warning(f"Erro ao tentar aplicar modo escuro: {e}")
 
-    def _on_window_delete_event(self, widget: Gtk.Widget, event: Any) -> bool:
-        self.save_window_state(widget, event)
-        self.hide()
-        return True
 
     def save_window_state(self, widget: Gtk.Widget, event: Any) -> bool:
         try:

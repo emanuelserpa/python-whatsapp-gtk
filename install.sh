@@ -63,15 +63,6 @@ if [ $? -ne 0 ]; then
 fi
 print_success "PyGObject (GTK) encontrado."
 
-# Verifica AppIndicator3 (Opcional, para Tray Icon)
-python3 -c "import gi; gi.require_version('AppIndicator3', '0.1')" 2>/dev/null
-if [ $? -ne 0 ]; then
-    print_warning "Biblioteca AppIndicator3 não encontrada."
-    echo "    O aplicativo funcionará, mas o ícone na bandeja (Tray Icon) não será exibido."
-    echo "    Para ativar essa função, instale: libappindicator-gtk3 ou gir1.2-appindicator3-0.1"
-else
-    print_success "AppIndicator3 (Tray Icon) encontrado."
-fi
 
 # =============================================
 # PREPARAÇÃO DOS DIRETÓRIOS
