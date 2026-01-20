@@ -1,6 +1,8 @@
 """
 Main Application Window Logic.
 """
+import os
+import signal
 import sys
 import json
 import fcntl
@@ -43,12 +45,40 @@ class ClientWindow(Gtk.Window):
         # Setup Logging
         setup_logging(self.base_path)
 
-        # Single Instance Lock
+        # Single Instance Lock & IPC
+        # Usamos 'a+' para não truncar o arquivo se outra instância abrir
+        self.lock_fp = open(self.lock_file_path, 'a+')
+        self.lock_fp.seek(0)
+        
         try:
-            self.lock_fp = open(self.lock_file_path, 'w')
+            # Tenta adquirir o lock
             fcntl.lockf(self.lock_fp, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            
+            # Sucesso: Somos a instância principal. Salva o PID.
+            self.lock_fp.seek(0)
+            self.lock_fp.truncate()
+            self.lock_fp.write(str(os.getpid()))
+            self.lock_fp.flush()
+            
+            # Registra handler para restaurar janela ao receber sinal
+            GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGUSR1, self._on_app_signal, None)
+            
         except IOError:
-            logging.warning("Outra instância já está rodando. Encerrando")
+            # Falha: Outra instância existe. Tenta notificar.
+            logging.warning("Outra instância já está rodando.")
+            self.lock_fp.seek(0)
+            pid_str = self.lock_fp.read().strip()
+            
+            if pid_str and pid_str.isdigit():
+                target_pid = int(pid_str)
+                logging.info(f"Enviando sinal de restauração para PID {target_pid}")
+                try:
+                    os.kill(target_pid, signal.SIGUSR1)
+                except ProcessLookupError:
+                    pass
+                except Exception as e:
+                    logging.warning(f"Erro ao enviar sinal: {e}")
+            
             sys.exit(0)
 
         # Load Config
@@ -328,3 +358,15 @@ class ClientWindow(Gtk.Window):
                 n.show()
             except Exception:
                 pass
+
+    def _on_app_signal(self, user_data=None):
+        """Handler para sinal de IPC (SIGUSR1). Restaura a janela."""
+        logging.info("Sinal recebido: Restaurando janela...")
+        try:
+            self.show()
+            self.present()
+            # Se estava minimizada/iconificada, restaura
+            self.deiconify()
+        except Exception as e:
+            logging.warning(f"Erro ao restaurar janela via sinal: {e}")
+        return True # Retorna True para manter o handler ativo no GLib main loop (se necessário)
