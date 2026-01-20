@@ -61,7 +61,8 @@ class ClientWindow(Gtk.Window):
             self.lock_fp.flush()
             
             # Registra handler para restaurar janela ao receber sinal
-            GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGUSR1, self._on_app_signal, None)
+            # Usamos signal.signal padrão para garantir que o Python intercepte antes do SO matar o processo
+            signal.signal(signal.SIGUSR1, self._handle_signal)
             
         except IOError:
             # Falha: Outra instância existe. Tenta notificar.
@@ -107,6 +108,15 @@ class ClientWindow(Gtk.Window):
         self.webview.load_uri(WHATSAPP_URL)
         self.add(self.webview)
 
+        # Drag & Drop fix
+        # Chamamos no final para garantir que o GTK não sobrescreva
+        self.drag_dest_unset()
+
+    def _handle_signal(self, signum, frame):
+        """Callback de baixo nível para o sinal."""
+        # Agenda a execução na thread principal do GTK
+        GLib.idle_add(self._on_app_signal)
+
     def _setup_signals(self):
         self.connect("key-press-event", self._on_key_press)
         
@@ -144,8 +154,6 @@ class ClientWindow(Gtk.Window):
         current_ua = self.config.get("user_agent", DEFAULT_USER_AGENT)
         settings.set_user_agent(current_ua)
         logging.info(f"User-Agent definido: {current_ua}")
-
-        self.drag_dest_unset()
 
         self.webview.connect("load-failed", self._on_load_failed)
         self.webview.connect("show-notification", self._on_show_notification)
