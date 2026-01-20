@@ -8,5 +8,6 @@ Destaques:
 - Integração com o ambiente gráfico Linux (GNOME/XDG).
 
 Autor: Lourival Dantas
+Versão: 1.1
 Licença: GPLv3
 """
