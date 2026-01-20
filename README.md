@@ -119,7 +119,7 @@ Exemplo de `config.json`:
 - Faltam os bindings do GTK para Python (`python3-gi` ou `python-gobject`).
 
 **O app fecha imediatamente**
-- Rode via terminal: `python3 python-whatsapp-gtk.py` para ver o erro.
+- Rode via terminal: `python3 -m whatsapp` para ver o erro.
 - Verifique se não há outra instância travada rodando em segundo plano.
 
 ---

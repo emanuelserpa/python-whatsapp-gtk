@@ -86,19 +86,40 @@ mkdir -p "$INSTALL_DESKTOP"
 # INSTALAÇÃO DO EXECUTÁVEL
 # =============================================
 
-if [ ! -f "$SOURCE_FILE" ]; then
-    print_error "Arquivo $SOURCE_FILE não encontrado na pasta atual."
+# =============================================
+# INSTALAÇÃO DO PACOTE E EXECUTÁVEL
+# =============================================
+
+print_status "Copiando arquivos da aplicação..."
+
+# Limpa instalação anterior se existir para evitar conflitos
+rm -rf "$INSTALL_SHARE/whatsapp"
+
+# Copia o pacote Python para ~/.local/share/python-whatsapp-gtk/whatsapp
+if [ -d "whatsapp" ]; then
+    cp -r whatsapp "$INSTALL_SHARE/"
+    print_success "Pacote Python copiado para $INSTALL_SHARE"
+else
+    print_error "Diretório 'whatsapp' não encontrado!"
     exit 1
 fi
 
-cp "$SOURCE_FILE" "$INSTALL_BIN/$APP_NAME"
-chmod +x "$INSTALL_BIN/$APP_NAME"
-print_success "Executável instalado em $INSTALL_BIN"
+# Cria o script de lançamento em ~/.local/bin/python-whatsapp-gtk
+print_status "Criando executável..."
+cat > "$INSTALL_BIN/$APP_NAME" <<EOF
+#!/bin/bash
+export PYTHONPATH="$INSTALL_SHARE"
+exec python3 -m whatsapp "\$@"
+EOF
 
+chmod +x "$INSTALL_BIN/$APP_NAME"
+print_success "Executável instalado em $INSTALL_BIN/$APP_NAME"
 # =============================================
 # INSTALAÇÃO DO ÍCONE
 # =============================================
 
+# The icon is already copied in the previous step, so this block can be simplified or removed.
+# For now, keeping it as is, but it will effectively re-copy the icon.
 if [ -f "$ICON_SOURCE" ]; then
     cp "$ICON_SOURCE" "$INSTALL_SHARE/icon.png"
     print_success "Ícone copiado para $INSTALL_SHARE"

@@ -12,7 +12,3 @@ Thumbs.db
 
 # --- IDEs ---
 .vscode/
-
-# --- Venv ---
-venv/
-newrelic.ini
