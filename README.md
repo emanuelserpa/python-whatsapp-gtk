@@ -1,6 +1,8 @@
-# Python WhatsApp GTK
-
 <div align="center">
+
+<h1>Python WhatsApp GTK</h1>
+
+</br>
 
 ![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)
 ![License](https://img.shields.io/github/license/lourivaldantas/python-whatsapp-gtk)

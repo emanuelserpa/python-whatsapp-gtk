@@ -121,11 +121,23 @@ class ClientWindow(Gtk.Window):
         self.base_path: Path = get_app_data_path()
         self.state_file: Path = self.base_path / "window_state.json"
         self.lock_file_path: Path = self.base_path / "app.lock"
-        
+        self.icon_path: Path = self.base_path / "icon.png"
+
+        # Setup Logging
+        log_file: Path = self.base_path / "application.log"
+        # Reconfigura o logger básico para arquivo
+        # Nota: basicConfig faz nada se o root logger já estiver configurado, 
+        # mas aqui garantimos que não passamos argumentos inválidos.
+        logging.basicConfig(
+            filename=str(log_file),
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+
         # Cria um arquivo de trava. Se já estiver trancado por outro, fecha este.
         try:
             self.lock_fp = open(self.lock_file_path, 'w')
-            # Tenta adquirir bloqueio exclusivo (LOCK_EX) e sem esperar (LOCK_NB).
             fcntl.lockf(self.lock_fp, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except IOError:
             logging.warning("Outra instância já está rodando. Encerrando")
@@ -136,112 +148,118 @@ class ClientWindow(Gtk.Window):
 
         if not self.load_window_state():
             self.set_default_size(DEFAULT_WIDTH, DEFAULT_HEIGHT)
+            self.maximize()
 
-        log_file: Path = self.base_path / "application.log"
-
-        # Salva logs em arquivos para auditoria.
-        logging.basicConfig(
-            filename=str(log_file),
-            level=logging.INFO,
-            format='%(asctime)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
+        # Configurar ícone da janela
         try:
-            # isola cookies e cache na pasta designada, sem misturar com o navegador do sistema operacional.
-            data_manager = WebKit2.WebsiteDataManager(
-                base_data_directory=str(self.base_path),
-                base_cache_directory=str(self.base_path)
-            )
-
-            context = WebKit2.WebContext.new_with_website_data_manager(data_manager)
-
-            # Otimiza o gerenciamento de RAM para Single SPA.
-            context.set_cache_model(WebKit2.CacheModel.DOCUMENT_VIEWER)
-            # Desativa o corretor ortográfico para economizar RAM
-            context.set_spell_checking_enabled(False)
-
-            if notifications_enabled:
-                try:
-                    Notify.init(WINDOW_TITLE)
-                    context.connect("show-notification", self._on_show_notification)
-                except Exception as error:
-                    logging.warning(f"Erro ao inicializar notificações: {error}")
-
-            self.webview = WebKit2.WebView.new_with_context(context)
-            content_manager = self.webview.get_user_content_manager()
-
-            # Injeta CSS para limpar a interface
-            style = WebKit2.UserStyleSheet.new(
-                INJECTED_STYLES,
-                WebKit2.UserContentInjectedFrames.TOP_FRAME,
-                WebKit2.UserStyleLevel.USER,
-                None,
-                None
-            )
-
-            content_manager.add_style_sheet(style)
-
-            # ----- Initialize Tray Icon -----
-            self.indicator = None
-            if app_indicator_enabled:
-                self._init_tray_icon()
-
-            # ----- Check Dark Mode -----
-            self._apply_dark_mode_if_needed(content_manager)
-
-            # ----- WebView Connect -----
-            # Se a bandeja estiver ativa, "delete-event" esconde a janela ao invés de fechar
-            if app_indicator_enabled:
-                self.connect("delete-event", self._on_window_delete_event)
+            # Tenta usar o ícone do sistema ou do diretório local
+            if self.icon_path.exists():
+                self.set_icon_from_file(str(self.icon_path))
             else:
-                self.connect("delete-event", self.save_window_state)
+                self.set_icon_name("whatsapp")
+        except Exception as e:
+            logging.warning(f"Erro ao definir ícone da janela: {e}")
 
-            self.connect("key-press-event", self._on_key_press)
-            self.webview.connect("load-failed", self._on_load_failed)
-            self.webview.connect("decide-policy", self._on_decide_policy) # Evita que links externos sejam abertos no wrapper.
-            self.webview.connect("create", self._on_create_web_view) # Captura tentativas de abrir novas janelas por JavaScript.
-            self.webview.connect("permission-request", self._on_permission_request) # Gerencia as permissões de microfone e câmera.
+        self._init_webview()
+        self._setup_signals()
 
-            settings = self.webview.get_settings()
+        self.webview.load_uri(WHATSAPP_URL)
+        self.add(self.webview)
 
-            # Força o uso da GPU para renderização.
-            settings.set_hardware_acceleration_policy(WebKit2.HardwareAccelerationPolicy.ALWAYS)
+    def _setup_signals(self):
+        self.connect("key-press-event", self._on_key_press)
+        
+        if app_indicator_enabled:
+            # Se tem bandeja, intercepta o fechar para minimizar
+            self.connect("delete-event", self._on_window_delete_event)
+        else:
+            # Se não, fecha normal
+            self.connect("delete-event", self.save_window_state)
 
-            settings.set_enable_write_console_messages_to_stdout(False) # Limpa o terminal,
-            settings.set_enable_developer_extras(False) # Desativa funções de desenvolvedor.
-            
-            # Define o User-Agent a partir da configuração externa ou padrão
-            current_ua = self.config.get("user_agent", DEFAULT_USER_AGENT)
-            settings.set_user_agent(current_ua)
-            logging.info(f"User-Agent definido: {current_ua}")
+    def _init_webview(self):
+        # Configurar Profile (sessão persistente)
+        data_manager = WebKit2.WebsiteDataManager(
+            base_data_directory=str(self.base_path),
+            base_cache_directory=str(self.base_path)
+        )
+        
+        context = WebKit2.WebContext.new_with_website_data_manager(data_manager)
+        
+        # Configurações do WebView
+        self.webview = WebKit2.WebView.new_with_context(context)
+        content_manager = self.webview.get_user_content_manager()
+        
+        # Inject CSS
+        style = WebKit2.UserStyleSheet.new(
+            INJECTED_STYLES,
+            WebKit2.UserContentInjectedFrames.TOP_FRAME,
+            WebKit2.UserStyleLevel.USER,
+            None,
+            None
+        )
+        content_manager.add_style_sheet(style)
+        
+        settings = self.webview.get_settings()
+        settings.set_enable_developer_extras(False)
+        settings.set_enable_page_cache(True)
+        settings.set_enable_html5_local_storage(True)
+        settings.set_javascript_can_open_windows_automatically(False)
+        settings.set_hardware_acceleration_policy(WebKit2.HardwareAccelerationPolicy.ALWAYS)
 
-            # ----- Drag & Drop Support -----
-            # O WebKit2GTK geralmente habilita D&D do navegador por padrão.
-            # No entanto, garantimos que não estamos bloqueando nada no GTK.
-            self.drag_dest_unset() # Remove comportamentos padrão de drag-dest do GTK na janela principal para evitar conflitos
+        # User Agent
+        current_ua = self.config.get("user_agent", DEFAULT_USER_AGENT)
+        settings.set_user_agent(current_ua)
+        logging.info(f"User-Agent definido: {current_ua}")
 
-            # ----- Download Manager -----
-            context.connect("download-started", self._on_download_started)
-            
-            # Carrega a aplicação
-            self.webview.load_uri(WHATSAPP_URL)
-            self.add(self.webview)
-        except Exception as error:
-            # Captura falhas na engine do navegador.
-            logging.critical(f"Erro fatal ao iniciar WebKit: {error}", exc_info=True)
-            raise error
+        # Drag & Drop fix
+        self.drag_dest_unset()
+
+        # Connect Signals for Webiew
+        self.webview.connect("load-failed", self._on_load_failed)
+        self.webview.connect("show-notification", self._on_show_notification)
+        self.webview.connect("permission-request", self._on_permission_request)
+        self.webview.connect("decide-policy", self._on_decide_policy)
+        self.webview.connect("create", self._on_create_web_view)
+        
+        # Download Manager
+        context.connect("download-started", self._on_download_started)
+
+        # Dark Mode
+        self._apply_dark_mode_if_needed(content_manager)
+
+        # Tray Icon initialization (depende da UI)
+        self.indicator = None
+        if app_indicator_enabled:
+            self._init_tray_icon()
+
+    def _setup_signals(self):
+        self.connect("key-press-event", self._on_key_press)
+        
+        if app_indicator_enabled:
+            # Se tem bandeja, intercepta o fechar para minimizar
+            self.connect("delete-event", self._on_window_delete_event)
+        else:
+            # Se não, fecha normal
+            self.connect("delete-event", self.save_window_state)
 
     def _init_tray_icon(self):
         try:
-            icon_path = "" # Pode-se definir um caminho para um ícone customizado aqui se houver
-            # Usa 'whatsapp' ou 'dialog-information' como fallback se não tiver ícone específico
+            # Tenta usar ícone local como preferência se existir (garantia de visual), senão fallback pro sistema
+            icon_name = "whatsapp"
+            # Em alguns sistemas AppIndicator precisa do caminho absoluto se não for ícone de tema
+            if self.icon_path.exists():
+                icon_name = str(self.icon_path)
+            
             self.indicator = AppIndicator3.Indicator.new(
                 APP_NAME,
-                "whatsapp",
+                icon_name,
                 AppIndicator3.IndicatorCategory.APPLICATION_STATUS
             )
             self.indicator.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
             
+            # Se o ícone não carregou pelo caminho, tenta o nome genérico como fallback
+            # (A API do AppIndicator não tem um check fácil de 'is_valid', então confiamos no GTK Theme se falhar visualmente)
+
             menu = Gtk.Menu()
             
             item_show = Gtk.MenuItem(label="Abrir WhatsApp")
@@ -257,7 +275,7 @@ class ClientWindow(Gtk.Window):
             menu.show_all()
             self.indicator.set_menu(menu)
             
-            logging.info("Ícone na bandeja inicializado.")
+            logging.info(f"Ícone na bandeja inicializado (Icon: {icon_name}).")
         except Exception as e:
             logging.warning(f"Erro ao criar ícone na bandeja: {e}")
             self.indicator = None
