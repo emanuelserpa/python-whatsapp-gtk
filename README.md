@@ -17,6 +17,8 @@
 
 ## Sobre o Projeto
 
+> ATENÇÃO: Depois da última atualização que a Meta fez no WhatsApp Web, a vesão atual (1.1) do Python WhatsApp GTK está instável. Em breve, uma nova versão corrigida será lançada.
+
 Sempre prezei pelo equilíbrio entre **privacidade, eficiência e conforto**.
 
 Embora soluções PWA (Chrome/Edge) e Electron sejam funcionais, elas frequentemente trazem o peso de um navegador completo. Este projeto desacopla o WhatsApp de navegadores generalistas, criando uma instância dedicada, leve e transparente.
