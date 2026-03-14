@@ -243,7 +243,7 @@ class ClientWindow(Gtk.Window):
             navigation_action = decision.get_navigation_action()
             request = navigation_action.get_request()
             uri = request.get_uri()
-            if uri and "whatsapp.com" not in uri and "javascript:" not in uri:
+            if uri and "whatsapp.com" not in uri and "javascript:" not in uri and "whatsapp.net" not in uri:
                 try:
                     Gtk.show_uri_on_window(self, uri, Gtk.get_current_event_time())
                     decision.ignore()
